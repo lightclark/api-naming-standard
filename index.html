@@ -16,15 +16,12 @@
         h2, h3 { margin-top: 0; color: var(--primary-color); display: flex; align-items: center; gap: 8px; }
         textarea { width: 100%; height: 100px; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; transition: 0.3s; resize: none; box-sizing: border-box; background: #fafafa; }
         textarea:focus { border-color: var(--primary-color); outline: none; background: white; }
-        
         .result-box { background: #f8f9fa; padding: 16px; border-radius: 12px; margin-top: 15px; border-left: 5px solid var(--primary-color); position: relative; }
         .label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: bold; }
-        .value { font-family: 'Monaco', 'Consolas', monospace; font-weight: 600; color: #d93025; font-size: 1.3em; word-break: break-all; padding-right: 70px; min-height: 1.5em; }
-        
+        .value { font-family: 'Monaco', 'Consolas', monospace; font-weight: 600; color: #d93025; font-size: 1.3em; word-break: break-all; padding-right: 80px; min-height: 1.2em; }
         .btn-copy-small { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding: 5px 10px; background: white; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 11px; color: #666; transition: 0.2s; }
         .btn-copy-small:hover { border-color: var(--primary-color); color: var(--primary-color); }
         .btn-copy-small.copied { background: var(--success-color); color: white; border-color: var(--success-color); }
-
         .debug-info { margin-top: 20px; padding: 12px; background: #fff3e0; border-radius: 8px; font-size: 13px; color: #e65100; border: 1px dashed #ffb74d; }
         .side-panel { display: flex; flex-direction: column; gap: 15px; }
         .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
@@ -36,29 +33,29 @@
         .dict-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #f9f9f9; font-size: 14px; }
         .btn-del { background: #fee; color: #ff4d4f; border: 1px solid #ffcccb; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .status-tag { font-size: 12px; padding: 3px 10px; background: #e8f0fe; color: var(--primary-color); border-radius: 20px; font-weight: normal; }
+        [v-cloak] { display: none; }
     </style>
 </head>
 <body>
-    <div id="app" class="container">
+    <div id="app" class="container" v-cloak>
         <div class="card">
             <h2>⚙️ API 转换器 
                 <span v-if="isReady" class="status-tag">就绪</span>
-                <span v-else class="status-tag" style="background:#fff3e0;color:#e65100">正在初始化分词库...</span>
+                <span v-else class="status-tag" style="background:#fff3e0;color:#e65100">正在初始化...</span>
             </h2>
-            <textarea v-model="input" :placeholder="isReady ? '输入日语（支持长词优先匹配）...' : '请稍候...'" :disabled="!isReady"></textarea>
+            <textarea v-model="input" :placeholder="isReady ? '输入日语...' : '加载中...'" :disabled="!isReady"></textarea>
             
             <div v-if="input">
                 <div class="result-box">
                     <div class="label">小驼峰 camelCase</div>
                     <div class="value">{{ camelResult }}</div>
-                    <button class="btn-copy-small" @click="copyText(camelResult, $event)">复制词条</button>
+                    <button class="btn-copy-small" @click="copyText(camelResult, $event)">复制</button>
                 </div>
                 <div class="result-box">
                     <div class="label">下划线 snake_case</div>
                     <div class="value">{{ snakeResult }}</div>
-                    <button class="btn-copy-small" @click="copyText(snakeResult, $event)">复制词条</button>
+                    <button class="btn-copy-small" @click="copyText(snakeResult, $event)">复制</button>
                 </div>
-                
                 <div class="debug-info">
                     <strong>🔍 识别结果：</strong>
                     <div style="margin-top: 5px;">
@@ -75,15 +72,102 @@
                 <input v-model="newEn" placeholder="英文 (如: test)">
                 <button class="btn btn-primary" @click="addEntry" :disabled="!isReady">添加补丁</button>
             </div>
-            
             <div class="dict-list">
                 <div v-for="(en, ja) in customDict" :key="ja" class="dict-item">
                     <span><b>{{ ja }}</b> → {{ en }}</span>
                     <button class="btn-del" @click="removeEntry(ja)">删除</button>
                 </div>
             </div>
-
             <div v-if="Object.keys(customDict).length > 0" style="margin-top: 20px; border-top: 2px solid #eee; padding-top: 15px;">
-                <button class="btn btn-success" @click="exportToGit">复制补丁代码并跳转</button>
-                <p style="font-size: 11px; color: #888; margin-top: 10px;">
-                    * 格式：首行带逗号，末行不带逗号，方便直接追加。
+                <button class="btn btn-success" @click="exportToGit">仅复制补丁并同步</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const input = ref('');
+                const isReady = ref(false);
+                const tokenizer = ref(null);
+                const newJa = ref('');
+                const newEn = ref('');
+                const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
+
+                onMounted(() => {
+                    if (typeof kuromoji === 'undefined') return;
+                    kuromoji.builder({ dicPath: "./dict" }).build((err, _tokenizer) => {
+                        if (!err) { tokenizer.value = _tokenizer; isReady.value = true; }
+                    });
+                });
+
+                const copyText = (text, event) => {
+                    navigator.clipboard.writeText(text).then(() => {
+                        const btn = event.target;
+                        const old = btn.innerText;
+                        btn.innerText = '已复制';
+                        btn.classList.add('copied');
+                        setTimeout(() => { btn.innerText = old; btn.classList.remove('copied'); }, 1500);
+                    });
+                };
+
+                const addEntry = () => {
+                    if (newJa.value && newEn.value) {
+                        customDict.value[newJa.value.trim()] = newEn.value.trim();
+                        newJa.value = ''; newEn.value = '';
+                        saveLocal();
+                    }
+                };
+
+                const removeEntry = (ja) => { delete customDict.value[ja]; saveLocal(); };
+                const saveLocal = () => localStorage.setItem('api_custom_dict', JSON.stringify(customDict.value));
+
+                const exportToGit = () => {
+                    const entries = Object.entries(customDict.value);
+                    if (entries.length === 0) return;
+                    
+                    // 格式：逗号开头，行间逗号换行，末尾无逗号
+                    const lines = entries.map(([ja, en]) => `    "${ja}": "${en}"`);
+                    const patchCode = ",\n" + lines.join(",\n");
+                    
+                    navigator.clipboard.writeText(patchCode).then(() => {
+                        localStorage.removeItem('api_custom_dict');
+                        window.open("https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js", "_blank");
+                        location.reload();
+                    });
+                };
+
+                const safeGetDict = () => (typeof BASE_DICT !== 'undefined' ? BASE_DICT : {});
+
+                const processedTokens = computed(() => {
+                    if (!input.value || !tokenizer.value) return [];
+                    const text = input.value.trim();
+                    const combined = { ...safeGetDict(), ...customDict.value };
+                    if (combined[text]) return [combined[text]];
+                    return tokenizer.value.tokenize(text).map(t => combined[t.surface_form] || t.surface_form);
+                });
+
+                const debugTokens = computed(() => {
+                    if (!input.value || !tokenizer.value) return [];
+                    const text = input.value.trim();
+                    const combined = { ...safeGetDict(), ...customDict.value };
+                    if (combined[text]) return [text];
+                    return tokenizer.value.tokenize(text).map(t => t.surface_form);
+                });
+
+                const camelResult = computed(() => {
+                    return processedTokens.value.map((w, i) => 
+                        i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+                    ).join('');
+                });
+
+                const snakeResult = computed(() => processedTokens.value.join('_').toLowerCase());
+
+                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, debugTokens, exportToGit, copyText };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
