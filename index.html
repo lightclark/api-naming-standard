@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API 命名统一工具</title>
+    <title>API 命名统一工具 - 标准词增强版</title>
     <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js"></script>
     <script src="kuromoji.js"></script>
     <script src="dictionary.js"></script>
@@ -22,7 +22,6 @@
         .btn-copy-small { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding: 5px 10px; background: white; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 11px; color: #666; transition: 0.2s; }
         .btn-copy-small:hover { border-color: var(--primary-color); color: var(--primary-color); }
         .btn-copy-small.copied { background: var(--success-color); color: white; border-color: var(--success-color); }
-        .debug-info { margin-top: 20px; padding: 12px; background: #fff3e0; border-radius: 8px; font-size: 13px; color: #e65100; border: 1px dashed #ffb74d; }
         .side-panel { display: flex; flex-direction: column; gap: 15px; }
         .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
         .form-group input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
@@ -32,18 +31,14 @@
         .dict-list { max-height: 300px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 10px; margin-top: 10px; }
         .dict-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #f9f9f9; font-size: 14px; }
         .btn-del { background: #fee; color: #ff4d4f; border: 1px solid #ffcccb; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
-        .status-tag { font-size: 12px; padding: 3px 10px; background: #e8f0fe; color: var(--primary-color); border-radius: 20px; font-weight: normal; }
         [v-cloak] { display: none; }
     </style>
 </head>
 <body>
     <div id="app" class="container" v-cloak>
         <div class="card">
-            <h2>⚙️ API 转换器 
-                <span v-if="isReady" class="status-tag">就绪</span>
-                <span v-else class="status-tag" style="background:#fff3e0;color:#e65100">正在初始化...</span>
-            </h2>
-            <textarea v-model="input" :placeholder="isReady ? '输入日语...' : '加载中...'" :disabled="!isReady"></textarea>
+            <h2>⚙️ API 转换器 <span v-if="isReady" style="font-size:12px; font-weight:normal; opacity:0.6;">就绪</span></h2>
+            <textarea v-model="input" placeholder="输入日语（如：取引先責任者方法）..."></textarea>
             
             <div v-if="input">
                 <div class="result-box">
@@ -56,21 +51,15 @@
                     <div class="value">{{ snakeResult }}</div>
                     <button class="btn-copy-small" @click="copyText(snakeResult, $event)">复制</button>
                 </div>
-                <div class="debug-info">
-                    <strong>🔍 识别结果：</strong>
-                    <div style="margin-top: 5px;">
-                        <span v-for="(t, index) in debugTokens" :key="index" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">{{ t }}</span>
-                    </div>
-                </div>
             </div>
         </div>
 
         <div class="card side-panel">
-            <h3>📖 手动追加词典</h3>
+            <h3>📖 复合词/补丁定义</h3>
             <div class="form-group">
-                <input v-model="newJa" placeholder="日语 (如: テスト)">
-                <input v-model="newEn" placeholder="英文 (如: test)">
-                <button class="btn btn-primary" @click="addEntry" :disabled="!isReady">添加补丁</button>
+                <input v-model="newJa" placeholder="日语长词 (如: 取引先責任者)">
+                <input v-model="newEn" placeholder="对应英文 (如: contact)">
+                <button class="btn btn-primary" @click="addEntry" :disabled="!isReady">添加复合词</button>
             </div>
             <div class="dict-list">
                 <div v-for="(en, ja) in customDict" :key="ja" class="dict-item">
@@ -79,7 +68,7 @@
                 </div>
             </div>
             <div v-if="Object.keys(customDict).length > 0" style="margin-top: 20px; border-top: 2px solid #eee; padding-top: 15px;">
-                <button class="btn btn-success" @click="exportToGit">仅复制补丁并同步</button>
+                <button class="btn btn-success" @click="exportToGit">复制补丁并同步</button>
             </div>
         </div>
     </div>
@@ -103,16 +92,6 @@
                     });
                 });
 
-                const copyText = (text, event) => {
-                    navigator.clipboard.writeText(text).then(() => {
-                        const btn = event.target;
-                        const old = btn.innerText;
-                        btn.innerText = '已复制';
-                        btn.classList.add('copied');
-                        setTimeout(() => { btn.innerText = old; btn.classList.remove('copied'); }, 1500);
-                    });
-                };
-
                 const addEntry = () => {
                     if (newJa.value && newEn.value) {
                         customDict.value[newJa.value.trim()] = newEn.value.trim();
@@ -124,38 +103,47 @@
                 const removeEntry = (ja) => { delete customDict.value[ja]; saveLocal(); };
                 const saveLocal = () => localStorage.setItem('api_custom_dict', JSON.stringify(customDict.value));
 
-                const exportToGit = () => {
-                    const entries = Object.entries(customDict.value);
-                    if (entries.length === 0) return;
+                // 核心：最长匹配分词逻辑
+                const getProcessedTokens = (text) => {
+                    if (!text || !tokenizer.value) return [];
                     
-                    // 格式：逗号开头，行间逗号换行，末尾无逗号
-                    const lines = entries.map(([ja, en]) => `    "${ja}": "${en}"`);
-                    const patchCode = ",\n" + lines.join(",\n");
+                    const combined = { ...(typeof BASE_DICT !== 'undefined' ? BASE_DICT : {}), ...customDict.value };
+                    const keys = Object.keys(combined).sort((a, b) => b.length - a.length); // 长词优先
                     
-                    navigator.clipboard.writeText(patchCode).then(() => {
-                        localStorage.removeItem('api_custom_dict');
-                        window.open("https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js", "_blank");
-                        location.reload();
-                    });
+                    let result = [];
+                    let remaining = text;
+
+                    while (remaining.length > 0) {
+                        let matched = false;
+                        
+                        // 1. 尝试匹配词典中的长概念
+                        for (const key of keys) {
+                            if (remaining.startsWith(key)) {
+                                result.push(combined[key]);
+                                remaining = remaining.substring(key.length);
+                                matched = true;
+                                break;
+                            }
+                        }
+
+                        // 2. 如果词典没匹配到，交给分词器取第一个词
+                        if (!matched) {
+                            const tokens = tokenizer.value.tokenize(remaining);
+                            if (tokens.length > 0) {
+                                const firstToken = tokens[0].surface_form;
+                                result.push(combined[firstToken] || firstToken);
+                                remaining = remaining.substring(tokens[0].surface_form.length);
+                            } else {
+                                // 兜底处理：防止死循环
+                                result.push(remaining[0]);
+                                remaining = remaining.substring(1);
+                            }
+                        }
+                    }
+                    return result;
                 };
 
-                const safeGetDict = () => (typeof BASE_DICT !== 'undefined' ? BASE_DICT : {});
-
-                const processedTokens = computed(() => {
-                    if (!input.value || !tokenizer.value) return [];
-                    const text = input.value.trim();
-                    const combined = { ...safeGetDict(), ...customDict.value };
-                    if (combined[text]) return [combined[text]];
-                    return tokenizer.value.tokenize(text).map(t => combined[t.surface_form] || t.surface_form);
-                });
-
-                const debugTokens = computed(() => {
-                    if (!input.value || !tokenizer.value) return [];
-                    const text = input.value.trim();
-                    const combined = { ...safeGetDict(), ...customDict.value };
-                    if (combined[text]) return [text];
-                    return tokenizer.value.tokenize(text).map(t => t.surface_form);
-                });
+                const processedTokens = computed(() => getProcessedTokens(input.value.trim()));
 
                 const camelResult = computed(() => {
                     return processedTokens.value.map((w, i) => 
@@ -165,7 +153,26 @@
 
                 const snakeResult = computed(() => processedTokens.value.join('_').toLowerCase());
 
-                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, debugTokens, exportToGit, copyText };
+                const copyText = (text, event) => {
+                    navigator.clipboard.writeText(text).then(() => {
+                        const btn = event.target;
+                        const old = btn.innerText;
+                        btn.innerText = '已复制'; btn.classList.add('copied');
+                        setTimeout(() => { btn.innerText = old; btn.classList.remove('copied'); }, 1500);
+                    });
+                };
+
+                const exportToGit = () => {
+                    const entries = Object.entries(customDict.value);
+                    const patchCode = ",\n" + entries.map(([ja, en]) => `    "${ja}": "${en}"`).join(",\n");
+                    navigator.clipboard.writeText(patchCode).then(() => {
+                        localStorage.removeItem('api_custom_dict');
+                        window.open("https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js", "_blank");
+                        location.reload();
+                    });
+                };
+
+                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, exportToGit, copyText };
             }
         }).mount('#app');
     </script>
