@@ -22,6 +22,10 @@
         .btn-copy-small { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding: 5px 10px; background: white; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 11px; color: #666; transition: 0.2s; }
         .btn-copy-small:hover { border-color: var(--primary-color); color: var(--primary-color); }
         .btn-copy-small.copied { background: var(--success-color); color: white; border-color: var(--success-color); }
+        
+        /* 找回的识别结果样式 */
+        .debug-info { margin-top: 20px; padding: 12px; background: #fff3e0; border-radius: 8px; font-size: 13px; color: #e65100; border: 1px dashed #ffb74d; }
+        
         .side-panel { display: flex; flex-direction: column; gap: 15px; }
         .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
         .form-group input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
@@ -50,6 +54,15 @@
                     <div class="label">下划线 snake_case</div>
                     <div class="value">{{ snakeResult }}</div>
                     <button class="btn-copy-small" @click="copyText(snakeResult, $event)">复制</button>
+                </div>
+
+                <div class="debug-info">
+                    <strong>🔍 识别结果：</strong>
+                    <div style="margin-top: 5px;">
+                        <span v-for="(t, index) in debugTokens" :key="index" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">
+                            {{ t }}
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -103,38 +116,39 @@
                 const removeEntry = (ja) => { delete customDict.value[ja]; saveLocal(); };
                 const saveLocal = () => localStorage.setItem('api_custom_dict', JSON.stringify(customDict.value));
 
-                // 核心：最长匹配分词逻辑
-                const getProcessedTokens = (text) => {
+                // 获取匹配后的 Token (用于翻译或调试展示)
+                const getMatchResults = (text, type = 'translated') => {
                     if (!text || !tokenizer.value) return [];
                     
                     const combined = { ...(typeof BASE_DICT !== 'undefined' ? BASE_DICT : {}), ...customDict.value };
-                    const keys = Object.keys(combined).sort((a, b) => b.length - a.length); // 长词优先
+                    const keys = Object.keys(combined).sort((a, b) => b.length - a.length); 
                     
                     let result = [];
                     let remaining = text;
 
                     while (remaining.length > 0) {
                         let matched = false;
-                        
-                        // 1. 尝试匹配词典中的长概念
                         for (const key of keys) {
                             if (remaining.startsWith(key)) {
-                                result.push(combined[key]);
+                                // 如果是调试模式，存原文 key；翻译模式存英文 combined[key]
+                                result.push(type === 'raw' ? key : combined[key]);
                                 remaining = remaining.substring(key.length);
                                 matched = true;
                                 break;
                             }
                         }
 
-                        // 2. 如果词典没匹配到，交给分词器取第一个词
                         if (!matched) {
                             const tokens = tokenizer.value.tokenize(remaining);
                             if (tokens.length > 0) {
                                 const firstToken = tokens[0].surface_form;
-                                result.push(combined[firstToken] || firstToken);
-                                remaining = remaining.substring(tokens[0].surface_form.length);
+                                if (type === 'raw') {
+                                    result.push(firstToken);
+                                } else {
+                                    result.push(combined[firstToken] || firstToken);
+                                }
+                                remaining = remaining.substring(firstToken.length);
                             } else {
-                                // 兜底处理：防止死循环
                                 result.push(remaining[0]);
                                 remaining = remaining.substring(1);
                             }
@@ -143,7 +157,11 @@
                     return result;
                 };
 
-                const processedTokens = computed(() => getProcessedTokens(input.value.trim()));
+                // 原文分词结果展示
+                const debugTokens = computed(() => getMatchResults(input.value.trim(), 'raw'));
+
+                // 翻译后的 Token
+                const processedTokens = computed(() => getMatchResults(input.value.trim(), 'translated'));
 
                 const camelResult = computed(() => {
                     return processedTokens.value.map((w, i) => 
@@ -172,7 +190,11 @@
                     });
                 };
 
-                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, exportToGit, copyText };
+                return { 
+                    input, isReady, camelResult, snakeResult, customDict, 
+                    newJa, newEn, addEntry, removeEntry, exportToGit, 
+                    copyText, debugTokens 
+                };
             }
         }).mount('#app');
     </script>
