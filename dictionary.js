@@ -20,6 +20,8 @@ const BASE_DICT = {
     "取引先責任者": "contact",
     "管理": "manage",
     "テスト": "test",
-    "方法": "method"
+    "方法": "method",
+    "取引先": "account"
 };
+
 
