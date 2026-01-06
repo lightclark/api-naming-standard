@@ -18,5 +18,5 @@ const BASE_DICT = {
     "履歴": "history",
     "概要": "summary",
     "取引先責任者": "contact",
-    "テスト": "test"
+    "管理": "manage"
 };
