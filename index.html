@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API 命名统一工具</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="kuromoji.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
     <script src="dictionary.js"></script>
     <style>
         :root { --primary-color: #1a73e8; --success-color: #34a853; --bg-color: #f0f2f5; }
@@ -51,7 +51,7 @@
                 <div class="debug-info">
                     <strong>🔍 识别结果：</strong>
                     <div style="margin-top: 5px;">
-                        <span v-for="t in processedTokens" :key="t" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">
+                        <span v-for="t in debugTokens" :key="t" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">
                             {{ t }}
                         </span>
                     </div>
@@ -96,21 +96,16 @@
                 const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
 
                 onMounted(() => {
-    // 强制使用 HTTPS 路径，并指向官方稳定的 CDN 节点
-    const dicUrl = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
-    
-    kuromoji.builder({ dicPath: dicUrl }).build((err, _tokenizer) => {
-        if (err) {
-            // 如果加载失败，在控制台打印详细错误（按 F12 即可查看）
-            console.error("Kuromoji Tokenizer 加载失败:", err);
-            // 尝试备用方案：如果第一个 CDN 挂了，可以在这里添加逻辑，或者至少让用户知道出错了
-            return;
-        }
-        tokenizer.value = _tokenizer;
-        isReady.value = true;
-        console.log("分词引擎加载成功！");
-    });
-});
+                    const dicUrl = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
+                    kuromoji.builder({ dicPath: dicUrl }).build((err, _tokenizer) => {
+                        if (err) {
+                            console.error("Kuromoji Tokenizer 加载失败:", err);
+                            return;
+                        }
+                        tokenizer.value = _tokenizer;
+                        isReady.value = true;
+                    });
+                });
 
                 const addEntry = () => {
                     if (newJa.value && newEn.value) {
@@ -134,14 +129,29 @@
                     
                     navigator.clipboard.writeText(fileContent).then(() => {
                         localStorage.removeItem('api_custom_dict');
-                        // 此处替换为你的真实 GitHub 编辑链接
                         const githubUrl = "https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js";
                         window.open(githubUrl, "_blank");
                         location.reload();
                     });
                 };
 
-                // 核心改动：支持长词整体匹配
+                // 新增：专门用于显示日语原文分词结果的计算属性
+                const debugTokens = computed(() => {
+                    if (!input.value || !tokenizer.value) return [];
+                    const text = input.value.trim();
+                    const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
+                    const combined = { ...base, ...customDict.value };
+
+                    // 如果整体命中长词，直接返回该长词原文
+                    if (combined[text]) {
+                        return [text];
+                    }
+
+                    // 否则返回分词后的各个日语单词
+                    return tokenizer.value.tokenize(text).map(t => t.surface_form);
+                });
+
+                // 核心改动：支持长词整体匹配（这里保持输出翻译后的英文，用于生成 API 名）
                 const processedTokens = computed(() => {
                     if (!input.value || !tokenizer.value) return [];
                     
@@ -149,12 +159,10 @@
                     const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
                     const combined = { ...base, ...customDict.value };
 
-                    // 1. 检查输入是否整体就是一个长词
                     if (combined[text]) {
                         return [combined[text]];
                     }
 
-                    // 2. 否则使用分词器处理
                     return tokenizer.value.tokenize(text).map(t => {
                         const word = t.surface_form;
                         return combined[word] || word;
@@ -169,7 +177,8 @@
 
                 const snakeResult = computed(() => processedTokens.value.join('_').toLowerCase());
 
-                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, processedTokens, exportToGit };
+                // 修改返回值，包含 debugTokens
+                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, processedTokens, debugTokens, exportToGit };
             }
         }).mount('#app');
     </script>
