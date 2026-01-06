@@ -2,80 +2,78 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>API 命名规范化工具 - 增强版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 命名统一工具</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
+    <script src="dictionary.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f0f2f5; color: #333; }
-        .container { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: 1fr 300px; gap: 20px; }
-        .main-panel, .side-panel { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        h2, h3 { margin-top: 0; color: #1a73e8; }
-        textarea { width: 100%; height: 80px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; margin-bottom: 15px; }
-        .result-item { background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #1a73e8; position: relative; }
-        .result-label { font-size: 12px; color: #666; margin-bottom: 4px; }
-        .result-value { font-family: 'Courier New', Courier, monospace; font-weight: bold; color: #d93025; font-size: 1.1em; }
+        :root { --primary-color: #1a73e8; --bg-color: #f0f2f5; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-color); margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
         
-        /* 侧边栏词典样式 */
-        .dict-list { max-height: 400px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 10px; }
-        .dict-item { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed #eee; }
-        .add-dict { display: flex; gap: 5px; margin-bottom: 15px; }
-        .add-dict input { flex: 1; padding: 5px; border: 1px solid #ddd; border-radius: 4px; }
-        .btn { cursor: pointer; background: #1a73e8; color: white; border: none; padding: 5px 10px; border-radius: 4px; }
-        .btn-del { background: #ff4d4f; padding: 2px 6px; font-size: 10px; }
-        .status { font-size: 12px; color: #666; }
+        .card { background: white; padding: 24px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h2, h3 { margin-top: 0; color: var(--primary-color); display: flex; align-items: center; gap: 8px; }
+        
+        textarea { width: 100%; height: 100px; padding: 12px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; transition: border-color 0.3s; resize: none; box-sizing: border-box; }
+        textarea:focus { border-color: var(--primary-color); outline: none; }
+
+        .result-group { margin-top: 20px; }
+        .result-box { background: #f8f9fa; padding: 16px; border-radius: 12px; margin-bottom: 12px; border-left: 5px solid var(--primary-color); }
+        .label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .value { font-family: 'Monaco', 'Consolas', monospace; font-weight: 600; color: #d93025; font-size: 1.2em; word-break: break-all; }
+
+        /* 侧边栏 CSS 修正 */
+        .side-panel { display: flex; flex-direction: column; gap: 15px; }
+        .add-dict-form { display: flex; flex-direction: column; gap: 10px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
+        .add-dict-form input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; width: 100%; box-sizing: border-box; }
+        .btn-add { background: var(--primary-color); color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        
+        .dict-list { max-height: 400px; overflow-y: auto; }
+        .dict-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
+        .btn-del { background: #fee; color: #ff4d4f; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        
+        .status-tag { font-size: 12px; padding: 4px 8px; background: #e8f0fe; color: var(--primary-color); border-radius: 20px; }
     </style>
 </head>
 <body>
     <div id="app" class="container">
-        <div class="main-panel">
-            <h2>🚀 API 命名转换</h2>
-            <div class="status" v-if="!isReady">⏳ 正在加载分词字典...</div>
+        <div class="card">
+            <h2>⚙️ API 转换器 <span v-if="isReady" class="status-tag">就绪</span></h2>
+            <textarea v-model="input" :placeholder="isReady ? '输入日语，如：住所登録一覧' : '字典加载中...'" :disabled="!isReady"></textarea>
             
-            <textarea v-model="input" :disabled="!isReady" placeholder="输入日语，例如：顧客情報登録..."></textarea>
-            
-            <div v-if="isReady">
-                <div class="result-item">
-                    <div class="result-label">小驼峰 (camelCase)</div>
-                    <div class="result-value">{{ camelResult }}</div>
+            <div class="result-group" v-if="input">
+                <div class="result-box">
+                    <div class="label">小驼峰 camelCase</div>
+                    <div class="value">{{ camelResult }}</div>
                 </div>
-                <div class="result-item">
-                    <div class="result-label">下划线 (snake_case)</div>
-                    <div class="result-value">{{ snakeResult }}</div>
-                </div>
-                <div class="result-item">
-                    <div class="result-label">分词详情 (调试)</div>
-                    <div style="font-size: 12px; color: #999;">{{ tokensDetail }}</div>
+                <div class="result-box">
+                    <div class="label">下划线 snake_case</div>
+                    <div class="value">{{ snakeResult }}</div>
                 </div>
             </div>
         </div>
 
-        <div class="side-panel">
-            <h3>📖 手动词典</h3>
-            <div class="add-dict">
-                <input v-model="newJa" placeholder="日语">
-                <input v-model="newEn" placeholder="英文">
-                <button class="btn" @click="addEntry">添加</button>
+        <div class="card side-panel">
+            <h3>📖 手动追加</h3>
+            <div class="add-dict-form">
+                <input v-model="newJa" placeholder="日语 (如: 履歴)">
+                <input v-model="newEn" placeholder="英文 (如: history)">
+                <button class="btn-add" @click="addEntry">确认添加</button>
             </div>
             
             <div class="dict-list">
                 <div v-for="(en, ja) in customDict" :key="ja" class="dict-item">
                     <span><b>{{ ja }}</b> → {{ en }}</span>
-                    <button class="btn btn-del" @click="removeEntry(ja)">删除</button>
+                    <button class="btn-del" @click="removeEntry(ja)">删除</button>
                 </div>
             </div>
-            <p style="font-size: 11px; color: #999; margin-top: 10px;">* 数据保存在本地浏览器中</p>
         </div>
     </div>
 
     <script>
-        const { createApp, ref, computed, watch, onMounted } = Vue;
-
-        // 内置标准词典 (无法删除的基础词汇)
-        const BASE_DICT = {
-            "作成": "create", "新規": "create", "削除": "delete", "消去": "delete",
-            "更新": "update", "編集": "edit", "取得": "get", "一覧": "list",
-            "詳細": "detail", "顧客": "customer", "情報": "info", "設定": "setting"
-        };
+        const { createApp, ref, computed, onMounted } = Vue;
 
         createApp({
             setup() {
@@ -84,70 +82,48 @@
                 const tokenizer = ref(null);
                 const newJa = ref('');
                 const newEn = ref('');
-                
-                // 从 LocalStorage 加载用户自定义词典
                 const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
 
-                // 初始化分词器
                 onMounted(() => {
                     kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" }).build((err, _tokenizer) => {
-                        if (err) return alert("字典加载失败，请刷新重试");
+                        if (err) return;
                         tokenizer.value = _tokenizer;
                         isReady.value = true;
                     });
                 });
 
-                // 添加自定义词条
                 const addEntry = () => {
                     if (newJa.value && newEn.value) {
                         customDict.value[newJa.value.trim()] = newEn.value.trim();
-                        newJa.value = '';
-                        newEn.value = '';
-                        saveDict();
+                        newJa.value = ''; newEn.value = '';
+                        localStorage.setItem('api_custom_dict', JSON.stringify(customDict.value));
                     }
                 };
 
-                // 删除自定义词条
-                const removeEntry = (key) => {
-                    delete customDict.value[key];
-                    saveDict();
-                };
-
-                const saveDict = () => {
+                const removeEntry = (ja) => {
+                    delete customDict.value[ja];
                     localStorage.setItem('api_custom_dict', JSON.stringify(customDict.value));
                 };
 
-                // 混合词典查询
-                const translate = (word) => {
-                    // 优先级：自定义词典 > 内置词典 > 原词
-                    return customDict.value[word] || BASE_DICT[word] || word;
-                };
-
-                // 分词与转换逻辑
                 const processedWords = computed(() => {
                     if (!input.value || !tokenizer.value) return [];
-                    const tokens = tokenizer.value.tokenize(input.value);
-                    return tokens.map(t => translate(t.surface_form));
-                });
-
-                const tokensDetail = computed(() => {
-                    if (!tokenizer.value || !input.value) return '';
-                    return tokenizer.value.tokenize(input.value).map(t => t.surface_form).join(' | ');
+                    return tokenizer.value.tokenize(input.value).map(t => {
+                        // 调用 dictionary.js 中的 translateWord 函数
+                        return translateWord(t.surface_form, customDict.value);
+                    });
                 });
 
                 const camelResult = computed(() => {
-                    const ws = processedWords.value;
-                    return ws.map((w, i) => i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('');
+                    return processedWords.value.map((w, i) => 
+                        i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+                    ).join('');
                 });
 
                 const snakeResult = computed(() => {
                     return processedWords.value.join('_').toLowerCase();
                 });
 
-                return { 
-                    input, isReady, camelResult, snakeResult, 
-                    customDict, newJa, newEn, addEntry, removeEntry, tokensDetail 
-                };
+                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry };
             }
         }).mount('#app');
     </script>
