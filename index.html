@@ -2,49 +2,77 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>API 命名工具 - Vue 验证</title>
+    <title>API 命名工具 - 分词器验证</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
     <script src="dictionary.js"></script>
     <style>
         body { font-family: sans-serif; padding: 40px; background: #f0f2f5; }
         .card { background: white; padding: 24px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        .result { margin-top: 20px; padding: 15px; background: #e8f0fe; border-radius: 8px; color: #1a73e8; font-weight: bold; }
+        .status-box { padding: 10px; border-radius: 6px; margin-bottom: 20px; font-size: 0.9em; }
+        .loading { background: #fff3e0; color: #e65100; border: 1px solid #ffeb3b; }
+        .ready { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+        textarea { width: 100%; height: 80px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        .token-list { margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px; }
+        .token { background: #eee; padding: 4px 10px; border-radius: 4px; font-size: 0.9em; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
     <div id="app" class="card">
-        <h1>Vue 绑定测试</h1>
-        <p>请输入内容测试双向绑定：</p>
-        <input v-model="userInput" placeholder="随便打点什么...">
+        <h1>分词引擎测试</h1>
         
-        <div class="result" v-if="userInput">
-            你输入了：{{ userInput }}
+        <div :class="['status-box', isReady ? 'ready' : 'loading']">
+            {{ isReady ? '✅ 分词引擎已就绪' : '⏳ 正在从 CDN 下载分词字典 (请稍候)...' }}
         </div>
 
-        <div style="margin-top: 20px; font-size: 0.8em; color: #666;">
-            词典加载状态：{{ dictLoaded ? '✅ 已读取' : '❌ 未找到' }}
+        <textarea v-model="inputText" :disabled="!isReady" placeholder="请输入日语（如：住所一覧）..."></textarea>
+        
+        <div v-if="tokens.length > 0">
+            <p><strong>分词结果（原文）：</strong></p>
+            <div class="token-list">
+                <span v-for="(t, i) in tokens" :key="i" class="token">{{ t }}</span>
+            </div>
         </div>
     </div>
 
     <script>
-        const { createApp, ref, onMounted } = Vue;
+        const { createApp, ref, onMounted, watch } = Vue;
 
         createApp({
             setup() {
-                const userInput = ref('');
-                const dictLoaded = ref(false);
+                const inputText = ref('');
+                const isReady = ref(false);
+                const tokenizer = ref(null);
+                const tokens = ref([]);
 
                 onMounted(() => {
-                    // 检查 dictionary.js 是否生效
-                    if (typeof BASE_DICT !== 'undefined') {
-                        dictLoaded.value = true;
+                    // 确保使用稳定的 HTTPS CDN 地址
+                    const DIC_URL = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
+                    
+                    kuromoji.builder({ dicPath: DIC_URL }).build((err, _tokenizer) => {
+                        if (err) {
+                            console.error("引擎加载失败:", err);
+                            return;
+                        }
+                        tokenizer.value = _tokenizer;
+                        isReady.value = true;
+                    });
+                });
+
+                // 监听输入并执行分词
+                watch(inputText, (newVal) => {
+                    if (tokenizer.value && newVal.trim()) {
+                        const result = tokenizer.value.tokenize(newVal.trim());
+                        tokens.value = result.map(t => t.surface_form);
+                    } else {
+                        tokens.value = [];
                     }
                 });
 
                 return {
-                    userInput,
-                    dictLoaded
+                    inputText,
+                    isReady,
+                    tokens
                 }
             }
         }).mount('#app');
