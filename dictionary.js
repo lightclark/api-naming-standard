@@ -1,3 +1,4 @@
+// 基础标准词典
 const BASE_DICT = {
     "作成": "create",
     "新規": "create",
@@ -17,6 +18,5 @@ const BASE_DICT = {
     "住所": "address",
     "履歴": "history",
     "概要": "summary",
-    "取引先責任者": "contact",
-    "取引先": "account"
+    "取引先責任者": "contact"
 };
