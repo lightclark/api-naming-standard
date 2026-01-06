@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API 命名统一工具</title>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
     <script src="dictionary.js"></script>
     <style>
@@ -26,7 +26,7 @@
         .btn { border: none; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; width: 100%; }
         .btn-primary { background: var(--primary-color); color: white; }
         .btn-success { background: var(--success-color); color: white; margin-top: 10px; }
-        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .dict-list { max-height: 300px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 10px; margin-top: 10px; }
         .dict-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #f9f9f9; font-size: 14px; }
         .btn-del { background: #fee; color: #ff4d4f; border: 1px solid #ffcccb; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
@@ -36,8 +36,8 @@
 <body>
     <div id="app" class="container">
         <div class="card">
-            <h2>⚙️ API 转换器 <span v-if="isReady" class="status-tag">就绪</span></h2>
-            <textarea v-model="input" :placeholder="isReady ? '输入日语（支持长词优先匹配）...' : '正在加载引擎...'" :disabled="!isReady"></textarea>
+            <h2>⚙️ API 转换器 <span v-if="isReady" class="status-tag">就绪</span><span v-else class="status-tag" style="background:#fff3e0;color:#e65100">正在下载词典文件...</span></h2>
+            <textarea v-model="input" :placeholder="isReady ? '输入日语（支持长词优先匹配）...' : '请稍候，正在初始化分词库...'" :disabled="!isReady"></textarea>
             
             <div v-if="input">
                 <div class="result-box">
@@ -49,9 +49,9 @@
                     <div class="value">{{ snakeResult }}</div>
                 </div>
                 <div class="debug-info">
-                    <strong>🔍 识别结果：</strong>
+                    <strong>🔍 识别结果（原文分词）：</strong>
                     <div style="margin-top: 5px;">
-                        <span v-for="t in debugTokens" :key="t" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">
+                        <span v-for="(t, index) in debugTokens" :key="index" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">
                             {{ t }}
                         </span>
                     </div>
@@ -64,7 +64,7 @@
             <div class="form-group">
                 <input v-model="newJa" placeholder="日语长词 (如: 取引先責任者)">
                 <input v-model="newEn" placeholder="英文翻译 (如: contact)">
-                <button class="btn btn-primary" @click="addEntry">添加补丁</button>
+                <button class="btn btn-primary" @click="addEntry" :disabled="!isReady">添加补丁</button>
             </div>
             
             <div class="dict-list">
@@ -75,7 +75,7 @@
             </div>
 
             <div v-if="Object.keys(customDict).length > 0" style="margin-top: 20px; border-top: 2px solid #eee; padding-top: 15px;">
-                <button class="btn btn-success" @click="exportToGit">导出并同步至 GitHub</button>
+                <button class="btn btn-success" @click="exportToGit">同步至 GitHub 词典</button>
                 <p style="font-size: 11px; color: #888; margin-top: 10px;">
                     * 自动复制代码 + <b>清空本地追加词典</b> + 跳转 GitHub。
                 </p>
@@ -96,10 +96,12 @@
                 const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
 
                 onMounted(() => {
+                    // 2. 强制使用稳定的 CDN 地址并捕获超时
                     const dicUrl = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
+                    
                     kuromoji.builder({ dicPath: dicUrl }).build((err, _tokenizer) => {
                         if (err) {
-                            console.error("Kuromoji Tokenizer 加载失败:", err);
+                            console.error("分词引擎初始化失败:", err);
                             return;
                         }
                         tokenizer.value = _tokenizer;
@@ -129,44 +131,32 @@
                     
                     navigator.clipboard.writeText(fileContent).then(() => {
                         localStorage.removeItem('api_custom_dict');
+                        // 此处替换为你的真实 GitHub 编辑链接
                         const githubUrl = "https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js";
                         window.open(githubUrl, "_blank");
                         location.reload();
                     });
                 };
 
-                // 新增：专门用于显示日语原文分词结果的计算属性
+                // 找回分词原文展示
                 const debugTokens = computed(() => {
                     if (!input.value || !tokenizer.value) return [];
                     const text = input.value.trim();
                     const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
                     const combined = { ...base, ...customDict.value };
 
-                    // 如果整体命中长词，直接返回该长词原文
-                    if (combined[text]) {
-                        return [text];
-                    }
-
-                    // 否则返回分词后的各个日语单词
+                    if (combined[text]) return [text];
                     return tokenizer.value.tokenize(text).map(t => t.surface_form);
                 });
 
-                // 核心改动：支持长词整体匹配（这里保持输出翻译后的英文，用于生成 API 名）
                 const processedTokens = computed(() => {
                     if (!input.value || !tokenizer.value) return [];
-                    
                     const text = input.value.trim();
                     const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
                     const combined = { ...base, ...customDict.value };
 
-                    if (combined[text]) {
-                        return [combined[text]];
-                    }
-
-                    return tokenizer.value.tokenize(text).map(t => {
-                        const word = t.surface_form;
-                        return combined[word] || word;
-                    });
+                    if (combined[text]) return [combined[text]];
+                    return tokenizer.value.tokenize(text).map(t => combined[t.surface_form] || t.surface_form);
                 });
 
                 const camelResult = computed(() => {
@@ -177,8 +167,7 @@
 
                 const snakeResult = computed(() => processedTokens.value.join('_').toLowerCase());
 
-                // 修改返回值，包含 debugTokens
-                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, processedTokens, debugTokens, exportToGit };
+                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, debugTokens, exportToGit };
             }
         }).mount('#app');
     </script>
