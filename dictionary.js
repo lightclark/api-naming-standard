@@ -1,7 +1,9 @@
-// 基础标准词典：团队统一的命名规范写在这里
+// 基础标准词典
 const BASE_DICT = {
     "作成": "create",
     "新規": "create",
+    "登録": "register",
+    "保存": "save",
     "削除": "delete",
     "消去": "delete",
     "更新": "update",
@@ -11,14 +13,10 @@ const BASE_DICT = {
     "詳細": "detail",
     "顧客": "customer",
     "情報": "info",
+    "利用者": "user",
     "設定": "setting",
     "住所": "address",
     "履歴": "history",
-    "検索": "search"
+    "概要": "summary",
+    "取引先責任者": "contact"
 };
-
-// 辅助函数：根据词典转换
-function translateWord(word, customDict) {
-    // 优先级：手动追加 > 标准词典 > 原词
-    return customDict[word] || BASE_DICT[word] || word;
-}
