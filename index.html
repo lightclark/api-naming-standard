@@ -96,12 +96,21 @@
                 const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
 
                 onMounted(() => {
-                    kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" }).build((err, _tokenizer) => {
-                        if (err) return;
-                        tokenizer.value = _tokenizer;
-                        isReady.value = true;
-                    });
-                });
+    // 强制使用 HTTPS 路径，并指向官方稳定的 CDN 节点
+    const dicUrl = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
+    
+    kuromoji.builder({ dicPath: dicUrl }).build((err, _tokenizer) => {
+        if (err) {
+            // 如果加载失败，在控制台打印详细错误（按 F12 即可查看）
+            console.error("Kuromoji Tokenizer 加载失败:", err);
+            // 尝试备用方案：如果第一个 CDN 挂了，可以在这里添加逻辑，或者至少让用户知道出错了
+            return;
+        }
+        tokenizer.value = _tokenizer;
+        isReady.value = true;
+        console.log("分词引擎加载成功！");
+    });
+});
 
                 const addEntry = () => {
                     if (newJa.value && newEn.value) {
