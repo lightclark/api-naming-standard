@@ -2,148 +2,84 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>API 命名统一工具</title>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
-    <script src="dictionary.js"></script>
+    <title>Kuromoji MVP 验证工具</title>
     <style>
-        :root { --primary-color: #1a73e8; --success-color: #34a853; --bg-color: #f0f2f5; }
-        body { font-family: system-ui, sans-serif; background: var(--bg-color); margin: 0; padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
-        @media (max-width: 800px) { .container { grid-template-columns: 1fr; } }
-        .card { background: white; padding: 24px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-        textarea { width: 100%; height: 100px; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; box-sizing: border-box; resize: none; }
-        .result-box { background: #f8f9fa; padding: 15px; border-radius: 10px; margin-top: 12px; border-left: 5px solid var(--primary-color); }
-        .label { font-size: 11px; color: #888; margin-bottom: 4px; font-weight: bold; }
-        .value { font-family: monospace; font-weight: 600; color: #d93025; font-size: 1.2em; word-break: break-all; }
-        .token-tag { display: inline-block; background: #fff3e0; color: #e65100; padding: 2px 8px; border-radius: 4px; margin: 0 4px 4px 0; font-size: 13px; border: 1px solid #ffcc80; }
-        .status { font-size: 12px; padding: 4px 12px; border-radius: 20px; float: right; }
-        .status.loading { background: #fff3e0; color: #e65100; }
-        .status.ready { background: #e8f5e9; color: #2e7d32; }
-        .btn { border: none; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; }
-        .btn-primary { background: var(--primary-color); color: white; margin-top: 10px; }
-        .btn-success { background: var(--success-color); color: white; margin-top: 15px; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 10px; box-sizing: border-box; }
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; color: #333; }
+        .box { border: 1px solid #ccc; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .loading { color: #e65100; background: #fff3e0; }
+        .ready { color: #2e7d32; background: #e8f5e9; }
+        .error { color: #c62828; background: #ffebee; }
+        #status { font-weight: bold; padding: 10px; border-radius: 4px; }
+        pre { background: #f4f4f4; padding: 10px; overflow-x: auto; font-size: 13px; }
+        textarea { width: 100%; height: 60px; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div id="app" class="container">
-        <div class="card">
-            <span :class="['status', isReady ? 'ready' : 'loading']">
-                {{ isReady ? '● 引擎就绪' : '● 正在安全加载(5s内自动解锁)' }}
-            </span>
-            <h2>⚙️ API 转换器</h2>
-            <textarea v-model="input" :placeholder="isReady ? '请输入日语单词或短语...' : '正在准备环境中...'"></textarea>
-            
-            <div v-if="input">
-                <div class="result-box"><div class="label">小驼峰</div><div class="value">{{ camelResult }}</div></div>
-                <div class="result-box"><div class="label">下划线</div><div class="value">{{ snakeResult }}</div></div>
-                <div style="margin-top:15px">
-                    <div class="label">识别结果（原文分词）</div>
-                    <span v-for="t in debugTokens" :key="t" class="token-tag">{{ t }}</span>
-                </div>
-            </div>
-        </div>
 
-        <div class="card">
-            <h3>📖 本地补丁</h3>
-            <input v-model="newJa" placeholder="日语长词">
-            <input v-model="newEn" placeholder="英文翻译">
-            <button class="btn btn-primary" @click="addEntry">添加补丁条目</button>
-            
-            <div v-if="Object.keys(customDict).length > 0" style="margin-top: 20px; border-top: 1px solid #eee; pt: 15px;">
-                <button class="btn btn-success" @click="syncAndClear">一键同步并清理缓存</button>
-                <p style="font-size: 11px; color: #999; margin-top: 8px;">* 同步将复制代码并自动清空补丁列表</p>
-            </div>
+    <h1>🔍 Kuromoji 加载验证</h1>
+
+    <div id="status" class="box loading">⏳ 正在连接 CDN 并下载字典 (Step 1/2)...</div>
+
+    <div class="box">
+        <h3>测试分词</h3>
+        <p>引擎准备就绪后，在下方输入日语：</p>
+        <textarea id="input" disabled placeholder="等待引擎加载..."></textarea>
+        <div id="output-container" style="margin-top: 10px;">
+            <strong>分词结果：</strong>
+            <pre id="output">尚未运行</pre>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
+
     <script>
-        const { createApp, ref, computed, onMounted } = Vue;
+        const statusEl = document.getElementById('status');
+        const inputEl = document.getElementById('input');
+        const outputEl = document.getElementById('output');
 
-        createApp({
-            setup() {
-                const input = ref('');
-                const isReady = ref(false);
-                const tokenizer = ref(null);
-                const newJa = ref('');
-                const newEn = ref('');
-                const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
+        // 1. 验证库是否加载
+        if (typeof kuromoji === 'undefined') {
+            statusEl.className = 'box error';
+            statusEl.innerText = '❌ 错误：未能加载 kuromoji.js 库文件。请检查网络。';
+        } else {
+            console.log('Kuromoji 库文件已加载，开始构建分词器...');
+            
+            // 2. 尝试异步构建分词器
+            // 使用 HTTPS 绝对路径
+            const DIC_PATH = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
 
-                onMounted(() => {
-                    // 核心防护：5秒超时自救，防止 CDN 挂掉导致页面死锁
-                    const safeUnlock = setTimeout(() => {
-                        if (!isReady.value) {
-                            isReady.value = true;
-                            console.warn("分词引擎加载超时，已切换至基础模式。");
-                        }
-                    }, 5000);
+            kuromoji.builder({ dicPath: DIC_PATH }).build((err, tokenizer) => {
+                if (err) {
+                    statusEl.className = 'box error';
+                    statusEl.innerText = '❌ 字典下载/解析失败：' + err.message;
+                    console.error(err);
+                    return;
+                }
 
-                    kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" })
-                        .build((err, _tokenizer) => {
-                            clearTimeout(safeUnlock);
-                            if (!err) {
-                                tokenizer.value = _tokenizer;
-                                console.log("分词引擎加载成功");
-                            }
-                            isReady.value = true;
-                        });
-                });
+                // 3. 构建成功
+                statusEl.className = 'box ready';
+                statusEl.innerText = '✅ 引擎就绪！可以进行分词测试。';
+                inputEl.disabled = false;
+                inputEl.placeholder = '输入日语，例如：取引先責任者';
 
-                // 翻译逻辑整合 (不外挂在 dictionary.js)
-                const translateWord = (word) => {
-                    const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
-                    return customDict.value[word] || base[word] || word;
-                };
-
-                // 日语原文分词结果
-                const debugTokens = computed(() => {
-                    if (!input.value) return [];
-                    const text = input.value.trim();
-                    const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
-                    if (customDict.value[text] || base[text]) return [text];
-                    if (!tokenizer.value) return [text]; // 降级模式直接返回全文
-                    return tokenizer.value.tokenize(text).map(t => t.surface_form);
-                });
-
-                // 翻译后的 Token 数组
-                const processedTokens = computed(() => {
-                    return debugTokens.value.map(word => translateWord(word));
-                });
-
-                const camelResult = computed(() => {
-                    return processedTokens.value.map((w, i) => 
-                        i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
-                    ).join('');
-                });
-
-                const snakeResult = computed(() => processedTokens.value.join('_').toLowerCase());
-
-                const addEntry = () => {
-                    if (newJa.value && newEn.value) {
-                        customDict.value[newJa.value.trim()] = newEn.value.trim();
-                        newJa.value = ''; newEn.value = '';
-                        localStorage.setItem('api_custom_dict', JSON.stringify(customDict.value));
+                // 4. 绑定实时测试
+                inputEl.addEventListener('input', (e) => {
+                    const val = e.target.value.trim();
+                    if (!val) {
+                        outputEl.innerText = '等待输入...';
+                        return;
                     }
-                };
-
-                const syncAndClear = () => {
-                    const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
-                    const finalContent = `const BASE_DICT = ${JSON.stringify({ ...base, ...customDict.value }, null, 4)};`;
-                    
-                    navigator.clipboard.writeText(finalContent).then(() => {
-                        // 静默清理：不弹 alert，直接清缓存并跳转
-                        localStorage.removeItem('api_custom_dict');
-                        const editUrl = "https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js";
-                        window.open(editUrl, "_blank");
-                        location.reload();
-                    });
-                };
-
-                return { input, isReady, camelResult, snakeResult, debugTokens, customDict, newJa, newEn, addEntry, syncAndClear };
-            }
-        }).mount('#app');
+                    try {
+                        const result = tokenizer.tokenize(val);
+                        // 仅显示分词后的表面文字
+                        const surfaceForms = result.map(t => t.surface_form).join(' | ');
+                        outputEl.innerText = surfaceForms;
+                    } catch (ex) {
+                        outputEl.innerText = '分词运行错误：' + ex.message;
+                    }
+                });
+            });
+        }
     </script>
 </body>
 </html>
