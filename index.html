@@ -51,20 +51,18 @@
                 <div class="result-box">
                     <div class="label">小驼峰 camelCase</div>
                     <div class="value">{{ camelResult }}</div>
-                    <button class="btn-copy-small" @click="copyText(camelResult, $event)">复制</button>
+                    <button class="btn-copy-small" @click="copyText(camelResult, $event)">复制词条</button>
                 </div>
                 <div class="result-box">
                     <div class="label">下划线 snake_case</div>
                     <div class="value">{{ snakeResult }}</div>
-                    <button class="btn-copy-small" @click="copyText(snakeResult, $event)">复制</button>
+                    <button class="btn-copy-small" @click="copyText(snakeResult, $event)">复制词条</button>
                 </div>
                 
                 <div class="debug-info">
                     <strong>🔍 识别结果：</strong>
                     <div style="margin-top: 5px;">
-                        <span v-for="(t, index) in debugTokens" :key="index" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">
-                            {{ t }}
-                        </span>
+                        <span v-for="(t, index) in debugTokens" :key="index" style="display:inline-block; background:white; padding:2px 8px; border-radius:4px; margin-right:5px; border:1px solid #ffcc80; margin-bottom:4px;">{{ t }}</span>
                     </div>
                 </div>
             </div>
@@ -73,8 +71,8 @@
         <div class="card side-panel">
             <h3>📖 手动追加词典</h3>
             <div class="form-group">
-                <input v-model="newJa" placeholder="日语 (如: 取引先責任者)">
-                <input v-model="newEn" placeholder="英文 (如: contact)">
+                <input v-model="newJa" placeholder="日语 (如: テスト)">
+                <input v-model="newEn" placeholder="英文 (如: test)">
                 <button class="btn btn-primary" @click="addEntry" :disabled="!isReady">添加补丁</button>
             </div>
             
@@ -86,9 +84,9 @@
             </div>
 
             <div v-if="Object.keys(customDict).length > 0" style="margin-top: 20px; border-top: 2px solid #eee; padding-top: 15px;">
-                <button class="btn btn-success" @click="exportToGit">仅复制追加补丁并同步</button>
+                <button class="btn btn-success" @click="exportToGit">复制补丁代码并跳转</button>
                 <p style="font-size: 11px; color: #888; margin-top: 10px;">
-                    * <b>只复制</b>上方列表中的新条目内容。
+                    * <b>只复制</b>追加词条行的格式代码。
                 </p>
             </div>
         </div>
@@ -107,22 +105,11 @@
                 const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
 
                 onMounted(() => {
-                    // 初始化 kuromoji
-                    if (typeof kuromoji === 'undefined') {
-                        console.error("未检测到 kuromoji.js，请确保文件路径正确。");
-                        return;
-                    }
                     kuromoji.builder({ dicPath: "./dict" }).build((err, _tokenizer) => {
-                        if (err) {
-                            console.error("分词引擎加载失败:", err);
-                        } else {
-                            tokenizer.value = _tokenizer;
-                            isReady.value = true;
-                        }
+                        if (!err) { tokenizer.value = _tokenizer; isReady.value = true; }
                     });
                 });
 
-                // 通用复制功能
                 const copyText = (text, event) => {
                     if (!text) return;
                     navigator.clipboard.writeText(text).then(() => {
@@ -152,22 +139,23 @@
 
                 const saveLocal = () => localStorage.setItem('api_custom_dict', JSON.stringify(customDict.value));
 
-                // 核心修改：只复制补丁 code
+                // 核心修改：生成 "key": "value", 格式并移除 alert
                 const exportToGit = () => {
-                    if (Object.keys(customDict.value).length === 0) return;
+                    const entries = Object.entries(customDict.value);
+                    if (entries.length === 0) return;
                     
-                    // 格式化为 JSON 字符串
-                    const patchCode = JSON.stringify(customDict.value, null, 4);
+                    // 生成行格式：  "测试": "test",
+                    const patchCode = entries
+                        .map(([ja, en]) => `    "${ja}": "${en}",`)
+                        .join('\n');
                     
                     navigator.clipboard.writeText(patchCode).then(() => {
-                        alert("补丁代码已复制！请粘贴到 GitHub 上的 dictionary.js 中。");
                         localStorage.removeItem('api_custom_dict');
                         window.open("https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js", "_blank");
                         location.reload();
                     });
                 };
 
-                // 处理分词逻辑，增加对 BASE_DICT 未定义的防错处理
                 const getBaseDict = () => (typeof BASE_DICT !== 'undefined' ? BASE_DICT : {});
 
                 const debugTokens = computed(() => {
@@ -182,15 +170,8 @@
                     if (!input.value || !tokenizer.value) return [];
                     const text = input.value.trim();
                     const combined = { ...getBaseDict(), ...customDict.value };
-                    
-                    // 整体匹配优先
                     if (combined[text]) return [combined[text]];
-                    
-                    // 分词匹配
-                    return tokenizer.value.tokenize(text).map(t => {
-                        const word = t.surface_form;
-                        return combined[word] || word;
-                    });
+                    return tokenizer.value.tokenize(text).map(t => combined[t.surface_form] || t.surface_form);
                 });
 
                 const camelResult = computed(() => {
@@ -201,11 +182,7 @@
 
                 const snakeResult = computed(() => processedTokens.value.join('_').toLowerCase());
 
-                return { 
-                    input, isReady, camelResult, snakeResult, customDict, 
-                    newJa, newEn, addEntry, removeEntry, debugTokens, 
-                    exportToGit, copyText 
-                };
+                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, debugTokens, exportToGit, copyText };
             }
         }).mount('#app');
     </script>
