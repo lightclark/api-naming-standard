@@ -16,9 +16,18 @@
         h2, h3 { margin-top: 0; color: var(--primary-color); display: flex; align-items: center; gap: 8px; }
         textarea { width: 100%; height: 100px; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; transition: 0.3s; resize: none; box-sizing: border-box; background: #fafafa; }
         textarea:focus { border-color: var(--primary-color); outline: none; background: white; }
-        .result-box { background: #f8f9fa; padding: 16px; border-radius: 12px; margin-top: 15px; border-left: 5px solid var(--primary-color); }
-        .label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: bold; }
-        .value { font-family: 'Monaco', 'Consolas', monospace; font-weight: 600; color: #d93025; font-size: 1.3em; word-break: break-all; }
+        
+        /* 结果框布局优化 */
+        .result-box { background: #f8f9fa; padding: 16px; border-radius: 12px; margin-top: 15px; border-left: 5px solid var(--primary-color); position: relative; }
+        .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; }
+        .value { font-family: 'Monaco', 'Consolas', monospace; font-weight: 600; color: #d93025; font-size: 1.3em; word-break: break-all; padding-right: 60px; }
+        
+        /* 复制按钮样式 */
+        .btn-copy { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+        .btn-copy:hover { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+        .btn-copy.copied { background: var(--success-color); color: white; border-color: var(--success-color); }
+
         .debug-info { margin-top: 20px; padding: 12px; background: #fff3e0; border-radius: 8px; font-size: 13px; color: #e65100; border: 1px dashed #ffb74d; }
         .side-panel { display: flex; flex-direction: column; gap: 15px; }
         .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
@@ -41,13 +50,25 @@
             
             <div v-if="input">
                 <div class="result-box">
-                    <div class="label">小驼峰 camelCase</div>
+                    <div class="result-header">
+                        <div class="label">小驼峰 camelCase</div>
+                    </div>
                     <div class="value">{{ camelResult }}</div>
+                    <button class="btn-copy" :class="{copied: copyType === 'camel'}" @click="copyToClipboard(camelResult, 'camel')">
+                        {{ copyType === 'camel' ? '已复制' : '复制' }}
+                    </button>
                 </div>
+
                 <div class="result-box">
-                    <div class="label">下划线 snake_case</div>
+                    <div class="result-header">
+                        <div class="label">下划线 snake_case</div>
+                    </div>
                     <div class="value">{{ snakeResult }}</div>
+                    <button class="btn-copy" :class="{copied: copyType === 'snake'}" @click="copyToClipboard(snakeResult, 'snake')">
+                        {{ copyType === 'snake' ? '已复制' : '复制' }}
+                    </button>
                 </div>
+
                 <div class="debug-info">
                     <strong>🔍 识别结果（原文分词）：</strong>
                     <div style="margin-top: 5px;">
@@ -93,12 +114,11 @@
                 const tokenizer = ref(null);
                 const newJa = ref('');
                 const newEn = ref('');
+                const copyType = ref(''); // 用于控制复制按钮状态：'camel', 'snake' 或空
                 const customDict = ref(JSON.parse(localStorage.getItem('api_custom_dict') || '{}'));
 
                 onMounted(() => {
-                    // 2. 强制使用稳定的 CDN 地址并捕获超时
                     const dicUrl = "./dict";
-                    
                     kuromoji.builder({ dicPath: dicUrl }).build((err, _tokenizer) => {
                         if (err) {
                             console.error("分词引擎初始化失败:", err);
@@ -108,6 +128,18 @@
                         isReady.value = true;
                     });
                 });
+
+                // 复制功能逻辑
+                const copyToClipboard = (text, type) => {
+                    if (!text) return;
+                    navigator.clipboard.writeText(text).then(() => {
+                        copyType.value = type;
+                        // 2秒后恢复按钮状态
+                        setTimeout(() => {
+                            copyType.value = '';
+                        }, 2000);
+                    });
+                };
 
                 const addEntry = () => {
                     if (newJa.value && newEn.value) {
@@ -131,20 +163,17 @@
                     
                     navigator.clipboard.writeText(fileContent).then(() => {
                         localStorage.removeItem('api_custom_dict');
-                        // 此处替换为你的真实 GitHub 编辑链接
                         const githubUrl = "https://github.com/lightclark/api-naming-standard/edit/main/dictionary.js";
                         window.open(githubUrl, "_blank");
                         location.reload();
                     });
                 };
 
-                // 找回分词原文展示
                 const debugTokens = computed(() => {
                     if (!input.value || !tokenizer.value) return [];
                     const text = input.value.trim();
                     const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
                     const combined = { ...base, ...customDict.value };
-
                     if (combined[text]) return [text];
                     return tokenizer.value.tokenize(text).map(t => t.surface_form);
                 });
@@ -154,7 +183,6 @@
                     const text = input.value.trim();
                     const base = typeof BASE_DICT !== 'undefined' ? BASE_DICT : {};
                     const combined = { ...base, ...customDict.value };
-
                     if (combined[text]) return [combined[text]];
                     return tokenizer.value.tokenize(text).map(t => combined[t.surface_form] || t.surface_form);
                 });
@@ -167,7 +195,11 @@
 
                 const snakeResult = computed(() => processedTokens.value.join('_').toLowerCase());
 
-                return { input, isReady, camelResult, snakeResult, customDict, newJa, newEn, addEntry, removeEntry, debugTokens, exportToGit };
+                return { 
+                    input, isReady, camelResult, snakeResult, customDict, 
+                    newJa, newEn, addEntry, removeEntry, debugTokens, 
+                    exportToGit, copyToClipboard, copyType 
+                };
             }
         }).mount('#app');
     </script>
